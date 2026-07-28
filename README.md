@@ -7,6 +7,9 @@ are when it started, when it ends, how much has gone and how much is left.
 One HTML file. No server, no installation, no dependencies, no network. Open it
 and it works, reading the clock of the machine it is opened on.
 
+**Try it: <https://carloscardeira.github.io/exam-clock/>**, or download
+`exam-clock.html` and keep it: it runs the same with the network unplugged.
+
 ![The clock in English](docs/screenshot.png)
 
 ## Why

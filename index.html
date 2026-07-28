@@ -5,8 +5,15 @@
 <title>Exam Clock</title>
 <!-- The clock itself lives in exam-clock.html, so that the file keeps a name
      worth having when it is emailed to a colleague. This page only exists so
-     that the published site opens the clock at its root address. -->
-<meta http-equiv="refresh" content="0; url=exam-clock.html">
+     that the published site opens the clock at its root address.
+
+     The script carries the query string across, so that a per-room link written
+     against the root address keeps working; the meta refresh below is the
+     fallback for a browser with no scripting, and loses the parameters. -->
+<script>
+  location.replace("exam-clock.html" + location.search + location.hash);
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=exam-clock.html"></noscript>
 <link rel="canonical" href="exam-clock.html">
 </head>
 <body>
