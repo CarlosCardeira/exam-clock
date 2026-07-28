@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exam Clock</title>
+<!--
+  Exam Clock - a wall clock for the exam room, meant to be projected.
+
+  One file, no server, no dependencies: the page reads the clock of the machine
+  that opens it. Everything on screen can be edited by clicking on it, and every
+  setting has a keyboard shortcut, because during an invigilation there is no
+  time to hunt for menus.
+
+  Carlos Cardeira, Instituto Superior Tecnico, Universidade de Lisboa.
+-->
+<style>
+  :root{
+    --clock-scale:1;      /* [ and ] */
+    --text-scale:1;       /* , and . */
+    --ui-font:Arial,Helvetica,sans-serif;
+    --ink:#111;
+    --muted:#555;
+    --paper:#f5f5f5;
+  }
+  html,body{margin:0;height:100%;background:var(--paper);font-family:var(--ui-font);color:var(--ink);}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:3vmin;padding:3vmin;box-sizing:border-box;}
+  .head{text-align:center;}
+  #course{font-weight:bold;font-size:calc(clamp(30px,7.2vmin,92px)*var(--text-scale));
+          padding:.1em .3em;border-radius:.15em;line-height:1.1;}
+  #where{font-size:calc(clamp(20px,3.8vmin,48px)*var(--text-scale));color:var(--ink);margin-top:1vmin;}
+  #date{font-size:calc(clamp(18px,3.4vmin,44px)*var(--text-scale));color:var(--muted);margin-top:.6vmin;}
+  .panel{display:flex;align-items:center;justify-content:center;gap:6vmin;flex-wrap:wrap;}
+  canvas{background:#fff;border-radius:50%;box-shadow:0 0 12px rgba(0,0,0,.18);}
+  table.info{border-collapse:collapse;font-weight:bold;font-size:calc(clamp(24px,5vmin,70px)*var(--text-scale));}
+  table.info td{padding:.34em .55em;white-space:nowrap;}
+  table.info td.lbl{text-align:left;padding-right:2.2em;}
+  table.info td.val{text-align:right;letter-spacing:.03em;
+                    font-family:"Consolas","DejaVu Sans Mono","Liberation Mono","Courier New",monospace;}
+  #notes{max-width:min(90vw,60em);text-align:center;color:var(--muted);
+         font-size:calc(clamp(15px,2.4vmin,30px)*var(--text-scale));line-height:1.45;white-space:pre-wrap;}
+  #notes:empty::before{content:attr(data-placeholder);opacity:.35;}
+  .editable{cursor:pointer;border-radius:.15em;}
+  .editable:hover{background:#e6e6e6;}
+  input.inline{font:inherit;font-weight:inherit;text-align:inherit;background:#fff;
+               border:1px solid #999;border-radius:.15em;padding:0 .15em;max-width:90vw;}
+  /* Paused: the only loud thing on the page, because it must not be forgotten. */
+  #paused{display:none;font-weight:bold;letter-spacing:.12em;color:#a4400a;
+          font-size:calc(clamp(18px,3.2vmin,40px)*var(--text-scale));}
+  body.is-paused #paused{display:block;}
+  /* Final minute, only when the ending cue is switched on. */
+  @keyframes softpulse{0%,100%{opacity:1}50%{opacity:.35}}
+  body.final-pulse #remaining{animation:softpulse 1s ease-in-out infinite;}
+  /* The way in has to be seen by whoever sits at the machine, and not by the
+     room: it shows itself, and fades away when nobody touches the computer. */
+  .gear{position:fixed;top:10px;right:14px;font-size:17px;cursor:pointer;font-family:inherit;
+        user-select:none;background:#fff;border:1px solid #ccc;border-radius:6px;
+        padding:6px 12px;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.12);
+        opacity:.9;transition:opacity .8s ease;}
+  .gear:hover{opacity:1;background:#f0f0f0;}
+  #hint{position:fixed;bottom:12px;left:0;right:0;text-align:center;color:#888;font-size:15px;
+        pointer-events:none;opacity:.9;transition:opacity .8s ease;}
+  body.idle .gear, body.idle #hint{opacity:0;}
+  body.help-open .gear{opacity:0;}
+  #help{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;
+        justify-content:center;padding:4vmin;z-index:9;}
+  body.help-open #help{display:flex;}
+  #help .card{background:#fff;border-radius:10px;padding:22px 26px;max-width:760px;width:100%;
+              max-height:86vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3);font-size:16px;}
+  #help h2{margin:.1em 0 .5em;font-size:22px;}
+  #help table{border-collapse:collapse;width:100%;margin-bottom:14px;}
+  #help td{padding:4px 8px;border-bottom:1px solid #eee;vertical-align:top;}
+  #help td.k{white-space:nowrap;font-family:"Consolas","Courier New",monospace;width:8.5em;}
+  #help .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:8px 0;}
+  #help select,#help button{font:inherit;padding:4px 8px;}
+  #help .close{float:right;}
+  .foot{font-size:13px;color:#777;text-align:center;margin-top:10px;}
+  @media print{.gear,#help{display:none!important;}}
+</style>
+</head>
+<body>
+<button class="gear" id="gear">&#9881; <span id="gear-label">Settings</span></button>
+
+<div class="wrap">
+  <div class="head">
+    <div id="course" class="editable"></div>
+    <div id="where">
+      <span id="room" class="editable"></span><span id="where-sep"></span><span id="invigilator" class="editable"></span>
+    </div>
+    <div id="date" class="editable"></div>
+  </div>
+
+  <div class="panel">
+    <canvas id="clock" width="300" height="300"></canvas>
+    <table class="info">
+      <tr><td class="lbl" id="l-start">Start</td><td class="val editable" id="start"></td></tr>
+      <tr><td class="lbl" id="l-duration">Duration</td><td class="val editable" id="duration"></td></tr>
+      <tr><td class="lbl" id="l-end">End</td><td class="val" id="end"></td></tr>
+      <tr><td class="lbl" id="l-now">Now</td><td class="val" id="now"></td></tr>
+      <tr><td class="lbl" id="l-elapsed">Elapsed</td><td class="val" id="elapsed"></td></tr>
+      <tr><td class="lbl" id="l-remaining">Remaining</td><td class="val" id="remaining"></td></tr>
+    </table>
+  </div>
+
+  <div id="paused"></div>
+  <div id="notes" class="editable" data-placeholder=""></div>
+</div>
+
+<div id="hint"></div>
+
+<div id="help">
+  <div class="card">
+    <button class="close" id="help-close">&times;</button>
+    <h2 id="h-title">Settings</h2>
+
+    <div class="row">
+      <label id="h-lang">Language</label>
+      <select id="sel-lang"><option value="en">English</option><option value="pt">Portugu&ecirc;s</option></select>
+      <label id="h-font">Font</label>
+      <select id="sel-font"></select>
+    </div>
+    <div class="row">
+      <label id="h-seconds">Second hand</label>
+      <select id="sel-seconds"><option value="off">off</option><option value="on">on</option></select>
+      <label id="h-ending">Final minute</label>
+      <select id="sel-ending">
+        <option value="none">nothing</option>
+        <option value="pulse">remaining time pulses</option>
+        <option value="ring">red arc on the dial</option>
+        <option value="both">both</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="btn-pause"></button>
+      <button id="btn-reset"></button>
+    </div>
+
+    <p id="h-note" style="color:#555;margin:14px 0 6px"></p>
+    <table id="h-keys"></table>
+    <div class="foot" id="h-foot"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * 1. Words. English is the default; Portuguese is one key away.
+ * ------------------------------------------------------------------ */
+const STRINGS = {
+  en: {
+    title:"Exam Clock", start:"Start", duration:"Duration", end:"End", now:"Now",
+    elapsed:"Elapsed", remaining:"Remaining", paused:"PAUSED",
+    course:"Course", room:"Room", invigilator:"Invigilator",
+    notesHint:"click to write a note for the room",
+    settings:"Settings", language:"Language", font:"Font", secondHand:"Second hand",
+    ending:"Final minute", pause:"Pause", resume:"Resume", reset:"Reset everything",
+    endNone:"nothing", endPulse:"remaining time pulses", endRing:"red arc on the dial", endBoth:"both",
+    on:"on", off:"off",
+    hint:"Settings, and the list of keys: press h, or use the button in the corner.",
+    keysNote:"Everything below can also be done with a key, without leaving the clock on screen.",
+    keys:[
+      ["click","edit any field on the page"],
+      ["1 / 3","add 15 / 30 minutes"],
+      ["! / #","take away 15 / 30 minutes"],
+      ["+ / -","add or take away 5 minutes"],
+      ["p","pause and resume (the end time moves)"],
+      ["s","second hand, and seconds in the times"],
+      ["e","cycle what happens in the final minute"],
+      ["l","switch language"],
+      ["[ / ]","smaller / larger clock"],
+      [", / .","smaller / larger text"],
+      ["f","next font"],
+      ["h or ?","this panel"]
+    ],
+    foot:"Everything is kept in this browser. The page needs no server: it reads the clock of the "+
+         "machine that opens it. Settings can also come in the address: "+
+         "?course=...&room=...&invigilator=...&date=...&start=09:30&duration=2:00&lang=pt"
+  },
+  pt: {
+    title:"Relógio de Exame", start:"Início", duration:"Duração", end:"Fim", now:"Hora atual",
+    elapsed:"Decorrido", remaining:"Restante", paused:"EM PAUSA",
+    course:"Unidade curricular", room:"Sala", invigilator:"Vigilante",
+    notesHint:"clique para escrever um aviso para a sala",
+    settings:"Definições", language:"Idioma", font:"Letra", secondHand:"Ponteiro dos segundos",
+    ending:"Último minuto", pause:"Pausa", resume:"Retomar", reset:"Repor tudo",
+    endNone:"nada", endPulse:"o tempo restante pulsa", endRing:"arco vermelho no mostrador", endBoth:"os dois",
+    on:"ligado", off:"desligado",
+    hint:"Definições, e a lista de teclas: carregue em h, ou no botão do canto.",
+    keysNote:"Tudo o que está em baixo também se faz por tecla, sem tirar o relógio do ecrã.",
+    keys:[
+      ["clique","alterar qualquer campo da página"],
+      ["1 / 3","mais 15 / 30 minutos"],
+      ["! / #","menos 15 / 30 minutos"],
+      ["+ / -","mais ou menos 5 minutos"],
+      ["p","pausa e retoma (a hora de fim desloca-se)"],
+      ["s","ponteiro dos segundos, e segundos nas horas"],
+      ["e","percorrer o que acontece no último minuto"],
+      ["l","trocar de idioma"],
+      ["[ / ]","relógio menor / maior"],
+      [", / .","letra menor / maior"],
+      ["f","letra seguinte"],
+      ["h ou ?","este painel"]
+    ],
+    foot:"Fica tudo guardado neste browser. A página não precisa de servidor: usa o relógio da "+
+         "máquina que a abre. As definições também podem vir no endereço: "+
+         "?course=...&room=...&invigilator=...&date=...&start=09:30&duration=2:00&lang=pt"
+  }
+};
+
+const FONTS = [
+  ["Arial","Arial,Helvetica,sans-serif"],
+  ["Helvetica Neue","'Helvetica Neue',Helvetica,Arial,sans-serif"],
+  ["Verdana","Verdana,Geneva,sans-serif"],
+  ["Tahoma","Tahoma,Geneva,sans-serif"],
+  ["Georgia","Georgia,'Times New Roman',serif"],
+  ["Times","'Times New Roman',Times,serif"],
+  ["System","system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"],
+  ["Monospace","'Consolas','DejaVu Sans Mono','Courier New',monospace"]
+];
+
+const ENDINGS = ["none","pulse","ring","both"];
+
+/* ------------------------------------------------------------------ *
+ * 2. State. Content and looks are kept apart, so "reset" is meaningful.
+ * ------------------------------------------------------------------ */
+const DEFAULTS = {
+  lang:"en",
+  course:"Exam",
+  room:"",
+  invigilator:"",
+  date:"",              /* empty means today, written in the current language */
+  startH:9, startM:0,
+  durH:2, durM:0,
+  notes:"",
+  seconds:false,
+  ending:"none",
+  clockScale:1,
+  textScale:1,
+  fontIndex:0,
+  seenHelp:false,       /* the opening hint only shows until the panel is opened once */
+  pausedMs:0            /* time already spent in pause, in milliseconds */
+};
+const STORE = "exam-clock-v1";
+let S = load();
+let pausedAt = null;    /* not stored: a pause does not survive a reload */
+
+function load(){
+  let s = Object.assign({}, DEFAULTS);
+  try{
+    const raw = localStorage.getItem(STORE);
+    if(raw) Object.assign(s, JSON.parse(raw));
+  }catch(e){ /* private mode, or corrupted: defaults are fine */ }
+  return applyQuery(s);
+}
+function save(){
+  try{ localStorage.setItem(STORE, JSON.stringify(S)); }catch(e){}
+}
+
+/* The address bar wins over what was stored: it is how one link serves many
+   rooms without generating one file per room. */
+function applyQuery(s){
+  const q = new URLSearchParams(location.search);
+  const get = (...names) => { for(const n of names){ const v=q.get(n); if(v!==null) return v; } return null; };
+  const course = get("course","uc","exam","titulo","title");
+  if(course!==null) s.course = course;
+  const room = get("room","sala");
+  if(room!==null) s.room = room;
+  const inv = get("invigilator","vigilante","docente","teacher");
+  if(inv!==null) s.invigilator = inv;
+  const date = get("date","data");
+  if(date!==null) s.date = date;
+  const lang = get("lang","idioma");
+  if(lang && STRINGS[lang]) s.lang = lang;
+  const st = get("start","inicio");
+  if(st){ const t = parseTime(st); if(t){ s.startH=t[0]; s.startM=t[1]; } }
+  const du = get("duration","duracao");
+  if(du){ const d = parseDuration(du); if(d){ s.durH=d.hours; s.durM=d.minutes; } }
+  const sec = get("seconds","segundos");
+  if(sec!==null) s.seconds = (sec==="1"||sec==="on"||sec==="true"||sec==="yes");
+  const en = get("ending","final");
+  if(en && ENDINGS.includes(en)) s.ending = en;
+  return s;
+}
+
+const T = () => STRINGS[S.lang] || STRINGS.en;
+
+/* ------------------------------------------------------------------ *
+ * 3. Small helpers
+ * ------------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+const pad = v => String(v).padStart(2,"0");
+
+function parseTime(str){
+  const m = String(str).trim().match(/^(\d{1,2})[:h.](\d{2})$/);
+  if(!m) return null;
+  const h = +m[1], mi = +m[2];
+  if(h<0||h>23||mi<0||mi>59) return null;
+  return [h,mi];
+}
+/* Accepts "2:30" and plain minutes ("150"), as the Python version did. */
+function parseDuration(str){
+  let s = String(str).trim();
+  if(!s) return null;
+  let h, mi;
+  if(s.includes(":")){
+    const m = s.match(/^(\d{1,3}):(\d{1,2})$/);
+    if(!m) return null;
+    h = +m[1]; mi = +m[2];
+  }else{
+    const m = s.match(/^(\d{1,4})$/);
+    if(!m) return null;
+    h = Math.floor(+m[1]/60); mi = +m[1]%60;
+  }
+  if(mi>59) return null;
+  const total = h*60+mi;
+  if(total<1||total>1440) return null;
+  return {hours:Math.floor(total/60), minutes:total%60};
+}
+function todayLabel(){
+  const d = new Date();
+  const loc = S.lang==="pt" ? "pt-PT" : "en-GB";
+  return d.toLocaleDateString(loc,{day:"numeric",month:"long",year:"numeric"});
+}
+/* Milliseconds since midnight of today for the exam start. */
+function startDate(){
+  const d = new Date();
+  d.setHours(S.startH, S.startM, 0, 0);
+  return d;
+}
+function pausedTotal(){
+  return S.pausedMs + (pausedAt===null ? 0 : Date.now()-pausedAt);
+}
+function durationMs(){
+  return (S.durH*3600 + S.durM*60)*1000;
+}
+/* The end moves forward by whatever time was spent in pause: that is the whole
+   point of pausing, and the room has to see the new end time. */
+function endDate(){
+  return new Date(startDate().getTime() + durationMs() + pausedTotal());
+}
+function hms(ms, withSeconds){
+  if(ms<0) ms = 0;
+  const h = Math.floor(ms/3600000);
+  const m = Math.floor(ms%3600000/60000);
+  const s = Math.floor(ms%60000/1000);
+  return withSeconds ? pad(h)+":"+pad(m)+":"+pad(s) : pad(h)+":"+pad(m);
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Click to edit. One helper for every field on the page.
+ * ------------------------------------------------------------------ */
+function makeEditable(el, read, write, opts){
+  opts = opts||{};
+  el.addEventListener("click", function(){
+    if(el.dataset.editing) return;
+    el.dataset.editing = "1";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "inline";
+    input.value = read();
+    const cs = getComputedStyle(el);
+    input.style.fontSize = cs.fontSize;
+    input.style.fontWeight = cs.fontWeight;
+    input.style.fontFamily = cs.fontFamily;
+    input.style.textAlign = opts.align || cs.textAlign || "left";
+    if(opts.width) input.style.width = opts.width;
+    el.replaceWith(input);
+    input.focus(); input.select();
+    let done = false;
+    const finish = () => {
+      if(done) return;
+      done = true;
+      write(input.value);
+      input.replaceWith(el);
+      delete el.dataset.editing;
+      render();
+    };
+    input.addEventListener("blur", finish);
+    input.addEventListener("keydown", ev => {
+      if(ev.key==="Enter"){ ev.preventDefault(); finish(); }
+      else if(ev.key==="Escape"){ ev.preventDefault(); done = true; input.replaceWith(el);
+                                  delete el.dataset.editing; render(); }
+      ev.stopPropagation();          /* shortcuts must not fire while typing */
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 5. The dial
+ * ------------------------------------------------------------------ */
+const canvas = $("clock");
+const ctx = canvas.getContext("2d");
+
+function resizeCanvas(){
+  const base = Math.max(140, Math.min(window.innerWidth*0.42, window.innerHeight*0.72));
+  const size = Math.max(120, Math.round(base * S.clockScale));
+  if(canvas.width !== size){ canvas.width = size; canvas.height = size; }
+}
+function drawFace(){
+  const W = canvas.width, cx = W/2, cy = W/2, r = W/2 - W*0.04;
+  ctx.clearRect(0,0,W,W);
+  ctx.strokeStyle = "#000";
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.lineWidth = W*0.027; ctx.stroke();
+  ctx.lineWidth = W*0.02;
+  for(let i=0;i<12;i++){
+    const a = (i-3)*Math.PI*2/12;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*(r-W*0.066), cy+Math.sin(a)*(r-W*0.066));
+    ctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+    ctx.stroke();
+  }
+  ctx.lineWidth = W*0.01;
+  for(let i=0;i<60;i++){
+    if(i%5===0) continue;
+    const a = (i-15)*Math.PI*2/60;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a)*(r-W*0.033), cy+Math.sin(a)*(r-W*0.033));
+    ctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+    ctx.stroke();
+  }
+  return {cx,cy,r,W};
+}
+function hand(deg, len, width, colour){
+  const cx = canvas.width/2, cy = canvas.width/2;
+  const rad = (deg-90)*Math.PI/180;
+  ctx.strokeStyle = colour || "#000";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx,cy);
+  ctx.lineTo(cx+Math.cos(rad)*len, cy+Math.sin(rad)*len);
+  ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.strokeStyle = "#000";
+}
+/* The red arc of the last minute: it shrinks as the minute runs out. */
+function drawFinalArc(g, remainingMs){
+  const frac = Math.max(0, Math.min(1, remainingMs/60000));
+  if(frac<=0) return;
+  ctx.beginPath();
+  ctx.strokeStyle = "#c0392b";
+  ctx.lineWidth = g.W*0.03;
+  ctx.arc(g.cx, g.cy, g.r - g.W*0.09, -Math.PI/2, -Math.PI/2 + frac*2*Math.PI);
+  ctx.stroke();
+  ctx.strokeStyle = "#000";
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. Painting the page
+ * ------------------------------------------------------------------ */
+function renderStatic(){
+  const t = T();
+  document.documentElement.lang = S.lang;
+  document.title = t.title + (S.room ? " - " + S.room : "");
+  $("l-start").textContent     = t.start;
+  $("l-duration").textContent  = t.duration;
+  $("l-end").textContent       = t.end;
+  $("l-now").textContent       = t.now;
+  $("l-elapsed").textContent   = t.elapsed;
+  $("l-remaining").textContent = t.remaining;
+  $("paused").textContent      = t.paused;
+  $("gear-label").textContent  = t.settings;
+  $("gear").title              = t.settings + " (h)";
+  $("hint").textContent        = S.seenHelp ? "" : t.hint;
+  $("notes").setAttribute("data-placeholder", t.notesHint);
+
+  /* An empty room or invigilator would leave nothing to click on, so an empty
+     field keeps a blank of its own to be clicked. */
+  const blank = "    ";
+  $("course").textContent = S.course || t.course;
+  $("room").textContent = S.room || blank;
+  $("invigilator").textContent = S.invigilator || blank;
+  $("where-sep").textContent = (S.room && S.invigilator) ? "  -  " : "";
+  $("date").textContent = S.date || todayLabel();
+  $("notes").textContent = S.notes;
+
+  document.documentElement.style.setProperty("--clock-scale", S.clockScale);
+  document.documentElement.style.setProperty("--text-scale", S.textScale);
+  document.documentElement.style.setProperty("--ui-font", FONTS[S.fontIndex][1]);
+
+  document.body.classList.toggle("is-paused", pausedAt!==null);
+  fillHelp();
+}
+
+function render(){
+  renderStatic();
+  resizeCanvas();
+  tick();
+  save();
+}
+
+function tick(){
+  const t = T();
+  const now = new Date();
+  const start = startDate();
+  const end = endDate();
+  const withSec = S.seconds;
+
+  $("start").textContent = pad(S.startH)+":"+pad(S.startM);
+  $("duration").textContent = pad(S.durH)+":"+pad(S.durM);
+  $("end").textContent = pad(end.getHours())+":"+pad(end.getMinutes());
+  $("now").textContent = withSec
+      ? pad(now.getHours())+":"+pad(now.getMinutes())+":"+pad(now.getSeconds())
+      : pad(now.getHours())+":"+pad(now.getMinutes());
+
+  /* While paused, elapsed and remaining stand still: that is what the room
+     is promised when the invigilator stops the clock. */
+  let elapsed = now - start - pausedTotal();
+  if(elapsed < 0) elapsed = 0;
+  if(elapsed > durationMs()) elapsed = durationMs();
+  let remaining = end - now;
+  if(remaining < 0) remaining = 0;
+  if(pausedAt !== null){
+    elapsed = pausedAt - start - S.pausedMs;
+    if(elapsed < 0) elapsed = 0;
+    remaining = durationMs() - elapsed;
+    if(remaining < 0) remaining = 0;
+  }
+
+  const started = now >= start;
+  const finalMinute = started && remaining > 0 && remaining <= 60000 && S.ending !== "none";
+  $("elapsed").textContent = hms(elapsed, withSec);
+  $("remaining").textContent = hms(remaining, withSec || finalMinute);
+
+  document.body.classList.toggle("final-pulse",
+      finalMinute && (S.ending==="pulse" || S.ending==="both"));
+
+  const g = drawFace();
+  const W = g.W;
+  const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+  hand((h%12)*30 + m*0.5, W*0.25, W*0.020);
+  hand(m*6 + s*0.1,       W*0.35, W*0.013);
+  if(S.seconds) hand(s*6, W*0.40, W*0.006, "#c0392b");
+  if(finalMinute && (S.ending==="ring" || S.ending==="both")) drawFinalArc(g, remaining);
+}
+
+/* ------------------------------------------------------------------ *
+ * 7. Actions
+ * ------------------------------------------------------------------ */
+function bumpDuration(mins){
+  let total = S.durH*60 + S.durM + mins;
+  if(total < 1) total = 1;
+  if(total > 1440) total = 1440;
+  S.durH = Math.floor(total/60); S.durM = total%60;
+  render();
+}
+function togglePause(){
+  if(pausedAt === null){
+    pausedAt = Date.now();
+  }else{
+    S.pausedMs += Date.now() - pausedAt;
+    pausedAt = null;
+  }
+  render();
+}
+function toggleLanguage(){ S.lang = (S.lang==="en") ? "pt" : "en"; render(); }
+function cycleEnding(){ S.ending = ENDINGS[(ENDINGS.indexOf(S.ending)+1) % ENDINGS.length]; render(); }
+function cycleFont(){ S.fontIndex = (S.fontIndex+1) % FONTS.length; render(); }
+function scaleClock(f){ S.clockScale = Math.min(2.5, Math.max(0.4, +(S.clockScale*f).toFixed(3))); render(); }
+function scaleText(f){ S.textScale = Math.min(2.5, Math.max(0.4, +(S.textScale*f).toFixed(3))); render(); }
+function resetAll(){
+  const lang = S.lang;
+  S = Object.assign({}, DEFAULTS, {lang:lang});
+  pausedAt = null;
+  render();
+}
+
+/* ------------------------------------------------------------------ *
+ * 8. Settings panel
+ * ------------------------------------------------------------------ */
+function fillHelp(){
+  const t = T();
+  $("h-title").textContent   = t.settings;
+  $("h-lang").textContent    = t.language;
+  $("h-font").textContent    = t.font;
+  $("h-seconds").textContent = t.secondHand;
+  $("h-ending").textContent  = t.ending;
+  $("btn-pause").textContent = (pausedAt===null) ? t.pause : t.resume;
+  $("btn-reset").textContent = t.reset;
+  $("h-note").textContent    = t.keysNote;
+  $("h-foot").textContent    = t.foot;
+
+  const selFont = $("sel-font");
+  if(selFont.options.length !== FONTS.length){
+    selFont.innerHTML = FONTS.map((f,i)=>'<option value="'+i+'">'+f[0]+'</option>').join("");
+  }
+  selFont.value = String(S.fontIndex);
+  $("sel-lang").value = S.lang;
+  $("sel-seconds").value = S.seconds ? "on" : "off";
+  $("sel-seconds").options[0].textContent = t.off;
+  $("sel-seconds").options[1].textContent = t.on;
+  const es = $("sel-ending");
+  es.value = S.ending;
+  es.options[0].textContent = t.endNone;
+  es.options[1].textContent = t.endPulse;
+  es.options[2].textContent = t.endRing;
+  es.options[3].textContent = t.endBoth;
+
+  $("h-keys").innerHTML = t.keys
+      .map(k => '<tr><td class="k">'+k[0]+'</td><td>'+k[1]+'</td></tr>').join("");
+}
+function toggleHelp(force){
+  const open = (force===undefined) ? !document.body.classList.contains("help-open") : force;
+  document.body.classList.toggle("help-open", open);
+  if(open){
+    S.seenHelp = true;            /* the hint has done its job, it does not come back */
+    $("hint").textContent = "";
+    save();
+    fillHelp();
+  }
+}
+
+/* The button and the hint belong to whoever is at the machine. If nobody
+   touches it for a few seconds, they fade and the room is left with the clock. */
+let idleTimer = null;
+function wakeUI(){
+  document.body.classList.remove("idle");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>{
+    if(!document.body.classList.contains("help-open")) document.body.classList.add("idle");
+  }, 4000);
+}
+
+/* ------------------------------------------------------------------ *
+ * 9. Wiring
+ * ------------------------------------------------------------------ */
+makeEditable($("course"),      ()=>S.course,      v=>{S.course = v.trim();},      {align:"center"});
+makeEditable($("room"),        ()=>S.room,        v=>{S.room = v.trim();},        {align:"center"});
+makeEditable($("invigilator"), ()=>S.invigilator, v=>{S.invigilator = v.trim();}, {align:"center"});
+makeEditable($("date"),        ()=>S.date || todayLabel(), v=>{S.date = v.trim();}, {align:"center"});
+makeEditable($("notes"),       ()=>S.notes,       v=>{S.notes = v;},              {align:"center"});
+makeEditable($("start"), ()=>pad(S.startH)+":"+pad(S.startM),
+             v=>{const t=parseTime(v); if(t){S.startH=t[0]; S.startM=t[1];}},
+             {align:"right", width:"4.2em"});
+makeEditable($("duration"), ()=>pad(S.durH)+":"+pad(S.durM),
+             v=>{const d=parseDuration(v); if(d){S.durH=d.hours; S.durM=d.minutes;}},
+             {align:"right", width:"4.2em"});
+
+document.addEventListener("keydown", ev => {
+  if(ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") return;
+  if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  switch(ev.key){
+    case "1": bumpDuration(+15); break;
+    case "3": bumpDuration(+30); break;
+    case "!": bumpDuration(-15); break;
+    case "#": bumpDuration(-30); break;
+    case "+": case "=": bumpDuration(+5); break;
+    case "-": bumpDuration(-5); break;
+    case "p": case "P": togglePause(); break;
+    case "s": case "S": S.seconds = !S.seconds; render(); break;
+    case "e": case "E": cycleEnding(); break;
+    case "l": case "L": toggleLanguage(); break;
+    case "[": scaleClock(1/1.1); break;
+    case "]": scaleClock(1.1); break;
+    case ",": case "<": scaleText(1/1.08); break;
+    case ".": case ">": scaleText(1.08); break;
+    case "f": case "F": cycleFont(); break;
+    case "h": case "H": case "?": toggleHelp(); break;
+    case "Escape": toggleHelp(false); break;
+    default: return;
+  }
+  ev.preventDefault();
+});
+
+$("gear").addEventListener("click", ()=>toggleHelp());
+$("help-close").addEventListener("click", ()=>toggleHelp(false));
+$("help").addEventListener("click", ev => { if(ev.target.id==="help") toggleHelp(false); });
+$("sel-lang").addEventListener("change", ev => { S.lang = ev.target.value; render(); });
+$("sel-font").addEventListener("change", ev => { S.fontIndex = +ev.target.value; render(); });
+$("sel-seconds").addEventListener("change", ev => { S.seconds = (ev.target.value==="on"); render(); });
+$("sel-ending").addEventListener("change", ev => { S.ending = ev.target.value; render(); });
+$("btn-pause").addEventListener("click", togglePause);
+$("btn-reset").addEventListener("click", resetAll);
+window.addEventListener("resize", ()=>{ resizeCanvas(); tick(); });
+
+["mousemove","mousedown","touchstart","keydown","wheel"].forEach(
+    ev => window.addEventListener(ev, wakeUI, {passive:true}));
+
+render();
+wakeUI();
+setInterval(tick, 250);   /* 4 Hz: the second hand moves cleanly and costs nothing */
+</script>
+</body>
+</html>

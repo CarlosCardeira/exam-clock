@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Exam Clock: a projected clock for written examinations"
+abstract: >-
+  A single-file, dependency-free wall clock for the exam room. It shows the time
+  of day on an analogue dial together with the start, end, elapsed and remaining
+  time of the examination. Every field is editable during the exam, the clock can
+  be paused for interruptions, and it runs with no server and no network.
+type: software
+authors:
+  - family-names: Cardeira
+    given-names: Carlos
+    affiliation: "IDMEC, Instituto Superior Técnico, Universidade de Lisboa"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # <- fill in
+license: MIT
+version: "1.0.0"
+date-released: "2026-07-29"
+keywords:
+  - engineering education
+  - examinations
+  - invigilation
+  - classroom tools
+repository-code: "https://github.com/CarlosCardeira/exam-clock"
+url: "https://carloscardeira.github.io/exam-clock/"
+# doi: "10.5281/zenodo.XXXXXXX"   # <- added after the first Zenodo release
