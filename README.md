@@ -92,7 +92,16 @@ at the top of the script.
 
 ## Cite
 
-If this is useful in your teaching, please cite it. See `CITATION.cff`.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21675520.svg)](https://doi.org/10.5281/zenodo.21675520)
+
+If this is useful in your teaching, please cite it:
+
+> Cardeira, C. (2026). *Exam Clock: a projected clock for written examinations*
+> (version 1.0.1) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.21675520
+
+The DOI above is the concept DOI: it always resolves to the latest release. Each
+release also has its own DOI, should you need to cite the exact version you used.
+Machine-readable metadata is in `CITATION.cff`.
 
 ## Author
 

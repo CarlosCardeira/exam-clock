@@ -13,8 +13,8 @@ authors:
     affiliation: "IDMEC, Instituto Superior Técnico, Universidade de Lisboa"
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # <- fill in
 license: MIT
-version: "1.0.0"
-date-released: "2026-07-28"
+version: "1.0.1"
+date-released: "2026-07-29"
 keywords:
   - engineering education
   - examinations
@@ -22,4 +22,4 @@ keywords:
   - classroom tools
 repository-code: "https://github.com/CarlosCardeira/exam-clock"
 url: "https://carloscardeira.github.io/exam-clock/"
-# doi: "10.5281/zenodo.XXXXXXX"   # <- added after the first Zenodo release
+doi: "10.5281/zenodo.21675520"   # concept DOI: always resolves to the latest version
