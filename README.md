@@ -12,8 +12,9 @@ and it works, reading the clock of the machine it is opened on.
 
 ![The clock projected in an exam room](docs/in-the-room.jpg)
 
-*Projected in an exam room at Instituto Superior Técnico: one browser per screen, the
-same clock on all of them, so that everyone in the room reads the same times.*
+*Projected in an exam room at Instituto Superior Técnico. The screens along the hall are
+chained to each other, so a single browser window, on the second output of the lecturer's
+laptop, fills them all and everyone reads the same times.*
 
 ![The clock in English](docs/screenshot.png)
 
