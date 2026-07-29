@@ -11,7 +11,7 @@ authors:
   - family-names: Cardeira
     given-names: Carlos
     affiliation: "IDMEC, Instituto Superior Técnico, Universidade de Lisboa"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"   # <- fill in
+    orcid: "https://orcid.org/0000-0002-7966-4648"
 license: MIT
 version: "1.0.1"
 date-released: "2026-07-29"
